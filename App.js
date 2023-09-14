@@ -1,12 +1,16 @@
 import { StatusBar } from 'expo-status-bar';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View, TextInput, Button, TouchableOpacity, FlatList, Keyboard } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { collection, doc, setDoc, addDoc, getDocs, deleteDoc, updateDoc } from 'firebase/firestore'
+import { useCollection } from 'react-firebase-hooks/firestore';
+import { db } from './components/config'
 
 const Stack = createNativeStackNavigator();
 
 const App = () => {
+
   return (
     <NavigationContainer>
       <Stack.Navigator initialRouteName='Page1'>
@@ -26,17 +30,13 @@ const App = () => {
 }
 
 const Page1 = ({ navigation, route }) => {
+
   const messageBack = route.params?.messageBack;
-
-  const [notes, setNotes] = useState({
-    note1: 'Note to self',
-    note2: 'Husk møde (Dont be late)',
-  });
-
-  const data = Object.keys(notes).map((key) => ({
-    key: key,
-    title: notes[key],
-  }));
+  const [values, loading, error] = useCollection(collection(db, "notes"));
+  const [notes, setNotes] = useState([]); 
+  const [newNote, setNewNote] = useState('');
+  const data = values?.docs.map((doc => ({...doc.data(), id: doc.id})))
+  console.log(data);
 
   const updateNote = (key, newNote) => {
     setNotes((prevNotes) => ({
@@ -45,7 +45,11 @@ const Page1 = ({ navigation, route }) => {
     }));
   };
 
-  const deleteNote = (key) => {
+  async function deleteDocument(id) {
+    await deleteDoc(doc(db, "notes", id));
+  } 
+
+  deleteNote = (key) => {
     setNotes((prevNotes) => {
       const newNotes = { ...prevNotes };
       delete newNotes[key];
@@ -61,13 +65,11 @@ const Page1 = ({ navigation, route }) => {
       }>
       <Text style={styles.itemText}>{item.key}</Text>
       <TouchableOpacity style= { styles.deleteButton }
-      onPress={ () => deleteNote(item.key) }>
+      onPress={ () => deleteDocument(item.id) }>
         <Text style= { styles.deleteButtonText }>x</Text>
       </TouchableOpacity>
     </TouchableOpacity>
   );
-
-  const [newNote, setNewNote] = useState('');
 
   return (
     <View style={styles.container}>
@@ -82,17 +84,23 @@ const Page1 = ({ navigation, route }) => {
         onChangeText={(txt) => setNewNote(txt)}
         placeholder='New note'
       />
-      <Button
-        title='Add note'
-        onPress={() => {
-          setNotes((notes) => ({
-            ...notes,
-            [`note${Object.keys(notes).length + 1}`]: newNote,
-          }));
-          setNewNote('');
-          Keyboard.dismiss();
-        }}
-      />
+<Button
+  title='Add note'
+  onPress={ () => {
+    setNotes( async () => {
+        try {
+          await setDoc(doc(db, "notes", newNote), {
+            "key": newNote,
+            "title": ''
+          })
+        } catch(err) {
+          console.log(err);
+        }
+      });
+      Keyboard.dismiss();
+  }
+}
+/>
       {messageBack && <Text style={styles.replyText}>Reply from Page 2: {messageBack}</Text>}
     </View>
   );
@@ -103,6 +111,12 @@ const Page2 = ({ navigation, route }) => {
   const key = route.params?.key;
   const updateNote = route.params?.updateNote;
   const [reply, setReply] = useState('');
+
+  async function updateNoteFire(id, title) {
+    await updateDoc(doc(db, "notes", id), {
+      title: title
+    })
+  }
 
   return (
     <View style={styles.container}>
@@ -116,8 +130,8 @@ const Page2 = ({ navigation, route }) => {
       />
       <Button
         title='Save changes'
-        onPress={() => {
-          updateNote(key, reply);
+        onPress={ () => {
+          updateNoteFire(key, reply);
           navigation.goBack();
         }}
       />
@@ -143,10 +157,11 @@ const styles = StyleSheet.create({
     marginVertical: 5,
     borderRadius: 5,
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: 'black',
   },
   itemText: {
     fontSize: 16,
+    width: 335
   },
   textInput: {
     backgroundColor: 'white',
@@ -166,17 +181,9 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   deleteButton: {
-    backgroundColor: 'red',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    backgroundColor: 'clear',
     borderRadius: 5,
-  },
-  deleteButton: {
-    backgroundColor: 'transparent',
-    paddingHorizontal: 10,
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingLeft: 290
+    justifyContent: 'flex-end'
   },
   deleteButtonText: {
     color: 'red',
