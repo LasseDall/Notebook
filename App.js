@@ -1,11 +1,13 @@
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View, TextInput, Button, TouchableOpacity, FlatList, Keyboard } from 'react-native';
+import { StyleSheet, Text, View, TextInput, Button, TouchableOpacity, FlatList, Keyboard, Image } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { collection, doc, setDoc, addDoc, getDocs, deleteDoc, updateDoc } from 'firebase/firestore'
 import { useCollection } from 'react-firebase-hooks/firestore';
-import { db } from './components/config'
+import { db, storage } from './components/config';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import * as ImagePicker from 'expo-image-picker';
 
 const Stack = createNativeStackNavigator();
 
@@ -35,8 +37,7 @@ const Page1 = ({ navigation, route }) => {
   const [values, loading, error] = useCollection(collection(db, "notes"));
   const [notes, setNotes] = useState([]); 
   const [newNote, setNewNote] = useState('');
-  const data = values?.docs.map((doc => ({...doc.data(), id: doc.id})))
-  console.log(data);
+  const data = values?.docs.map((doc => ({...doc.data(), id: doc.id})));
 
   const updateNote = (key, newNote) => {
     setNotes((prevNotes) => ({
@@ -55,7 +56,7 @@ const Page1 = ({ navigation, route }) => {
       delete newNotes[key];
       return newNotes;
     });
-  };
+  }
 
   const renderItem = ({ item }) => (
     <TouchableOpacity
@@ -111,30 +112,64 @@ const Page2 = ({ navigation, route }) => {
   const key = route.params?.key;
   const updateNote = route.params?.updateNote;
   const [reply, setReply] = useState('');
+  const [imagePath, setImagePath] = useState(null);
+
+  useEffect( () => {
+    downloadImage();
+  }, [])
+
+  async function launchImgePicker() {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      allowsEditing: true
+    });
+    if(!result.canceled) {
+      await setImagePath(result.assets[0].uri);
+    }
+  }
+
+  async function downloadImage() {
+    await getDownloadURL(ref(storage, key + ".jpg"))
+    .then( (url) => {
+      setImagePath(url);
+    });
+  }
 
   async function updateNoteFire(id, title) {
-    await updateDoc(doc(db, "notes", id), {
-      title: title
-    })
+    if(title != "") {
+      await updateDoc(doc(db, "notes", id), {
+        title: title
+      });
+    }
+    const uploadImage = await fetch(imagePath, { headers: {
+      'Content-Disposition': 'attachment; filename="image.jpg"'
+    }});
+    const blob = await uploadImage.blob();
+    const storageRef = await ref(storage, key + ".jpg");
+    uploadBytes(storageRef, blob).then( (snapshot) => {
+      console.log("Image uploaded!");
+    });
   }
 
   return (
     <View style={styles.container}>
       <Text style={styles.heading}>Edit Note</Text>
       {message && <Text style={styles.noteText}>{message}</Text>}
+      <Image style={{ width:200, height:200 }} source={{ uri:imagePath }}/>
       <TextInput
-        style={styles.textInput}
+        style={ styles.textInput }
         onChangeText={(txt) => setReply(txt)}
         placeholder='Edit note'
         value={reply}
       />
-      <Button
+      <TouchableOpacity style={ styles.button } title='pickImage' onPress={ launchImgePicker }>ADD IMAGE</TouchableOpacity>
+      <TouchableOpacity
+        style={ styles.button }
         title='Save changes'
         onPress={ () => {
           updateNoteFire(key, reply);
           navigation.goBack();
         }}
-      />
+      >SAVE CHANGES</TouchableOpacity>
     </View>
   );
 };
@@ -166,10 +201,20 @@ const styles = StyleSheet.create({
   textInput: {
     backgroundColor: 'white',
     padding: 10,
+    marginTop: 10,
     marginBottom: 10,
     borderRadius: 5,
     borderWidth: 1,
     borderColor: '#ddd',
+  },
+  button: {
+    marginTop: 5,
+    marginBottom: 10,
+    padding: 5,
+    borderRadius: 5,
+    border: 'solid',
+    textAlign: 'center',
+    backgroundColor: '#3498db',
   },
   replyText: {
     marginTop: 10,
