@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View, TextInput, Button, TouchableOpacity, FlatList, Keyboard, Image } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { collection, doc, setDoc, addDoc, getDocs, deleteDoc, updateDoc } from 'firebase/firestore'
+import { collection, doc, setDoc, addDoc, getDocs, deleteDoc, updateDoc, getDoc } from 'firebase/firestore'
 import { useCollection } from 'react-firebase-hooks/firestore';
 import { db, storage } from './components/config';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -15,7 +15,12 @@ const App = () => {
 
   return (
     <NavigationContainer>
-      <Stack.Navigator initialRouteName='Page1'>
+      <Stack.Navigator initialRouteName='Login'>
+      <Stack.Screen
+          name='Login'
+          component={Login}
+          options={{ title: 'Login' }}
+        />
         <Stack.Screen
           name='Page1'
           component={Page1}
@@ -30,6 +35,45 @@ const App = () => {
     </NavigationContainer>
   );
 }
+
+const Login = ({ navigation, route }) => {
+
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.heading}>Login</Text>
+      <TextInput
+        style={styles.textInput}
+        onChangeText={(txt) => setUsername(txt)}
+        placeholder='Username'
+      />
+      <TextInput
+        style={styles.textInput}
+        onChangeText={(txt) => setPassword(txt)}
+        placeholder='Password'
+      />
+    <Button
+      title='Login'
+      onPress= {async () => {
+          try {
+            console.log(username);
+            const passwordDB = await getDoc(doc(db, username, "password"));
+            console.log(passwordDB.data());
+            if(password == passwordDB.data().key) {
+              navigation.navigate("Page1", { username: username })
+            }
+          } catch(err) {
+            alert("Username or password was wrong");
+          }
+        Keyboard.dismiss();
+      }
+    }
+    />
+    </View>
+  );
+};
 
 const Page1 = ({ navigation, route }) => {
 
@@ -67,7 +111,9 @@ const Page1 = ({ navigation, route }) => {
       <Text style={styles.itemText}>{item.key}</Text>
       <TouchableOpacity style= { styles.deleteButton }
       onPress={ () => deleteDocument(item.id) }>
-        <Text style= { styles.deleteButtonText }>x</Text>
+        <View style={ styles.deleteView }>
+        <Text style={ styles.deleteButtonText }>x</Text>
+        </View>
       </TouchableOpacity>
     </TouchableOpacity>
   );
@@ -99,11 +145,9 @@ const Page1 = ({ navigation, route }) => {
         }
       });
       Keyboard.dismiss();
-  }
-}
+  }}
 />
-      {messageBack && <Text style={styles.replyText}>Reply from Page 2: {messageBack}</Text>}
-    </View>
+</View>
   );
 };
 
@@ -127,6 +171,25 @@ const Page2 = ({ navigation, route }) => {
     }
   }
 
+  async function launchCamera() {
+    const result = await ImagePicker.requestCameraPermissionsAsync();
+    if(!result) {
+      alert("Camera access not provided");
+    } else {
+      ImagePicker.launchCameraAsync({
+        quality: 1
+      })
+      .then((response) => {
+        if(!response.canceled) {
+          setImagePath(response.assets[0].uri);
+        }
+      })
+      .catch((error) => {
+        alert("Camera failed: " + error);
+      });
+    }
+  }
+
   async function downloadImage() {
     await getDownloadURL(ref(storage, key + ".jpg"))
     .then( (url) => {
@@ -135,19 +198,28 @@ const Page2 = ({ navigation, route }) => {
   }
 
   async function updateNoteFire(id, title) {
+    console.log("1");
     if(title != "") {
       await updateDoc(doc(db, "notes", id), {
         title: title
       });
     }
-    const uploadImage = await fetch(imagePath, { headers: {
-      'Content-Disposition': 'attachment; filename="image.jpg"'
-    }});
+    console.log("2");
+    try {
+    const uploadImage = await fetch(imagePath);
+    } catch(err) {
+      alert(err);
+    }
+    console.log("3");
     const blob = await uploadImage.blob();
+    console.log("4");
     const storageRef = await ref(storage, key + ".jpg");
-    uploadBytes(storageRef, blob).then( (snapshot) => {
+    console.log("5");
+    uploadBytes(storageRef, blob)
+    .then( (snapshot) => {
       console.log("Image uploaded!");
-    });
+    })
+    .catch((error) => console.log("Image failed to upload: " + error));
   }
 
   return (
@@ -161,7 +233,12 @@ const Page2 = ({ navigation, route }) => {
         placeholder='Edit note'
         value={reply}
       />
-      <TouchableOpacity style={ styles.button } title='pickImage' onPress={ launchImgePicker }>ADD IMAGE</TouchableOpacity>
+      <TouchableOpacity style={ styles.button } title='pickImage' onPress={ launchImgePicker }>
+        <Text>ADD IMAGE</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={ styles.button } title='useCamera' onPress={ launchCamera }>
+        <Text>TAKE PICTURE</Text>
+      </TouchableOpacity>
       <TouchableOpacity
         style={ styles.button }
         title='Save changes'
@@ -169,7 +246,9 @@ const Page2 = ({ navigation, route }) => {
           updateNoteFire(key, reply);
           navigation.goBack();
         }}
-      >SAVE CHANGES</TouchableOpacity>
+      >
+        <Text>SAVE CHANGES</Text>
+      </TouchableOpacity>
     </View>
   );
 };
@@ -196,7 +275,7 @@ const styles = StyleSheet.create({
   },
   itemText: {
     fontSize: 16,
-    width: 335
+    width: '96%',
   },
   textInput: {
     backgroundColor: 'white',
@@ -235,6 +314,10 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 16,
   },
+  deleteView: {
+    flex: 1,
+    alignItems: 'flex-end',
+  }
 });
 
 export default App;
