@@ -31,6 +31,11 @@ const App = () => {
           component={Page2}
           options={{ title: 'Edit Note' }}
         />
+        <Stack.Screen
+          name='Page3'
+          component={Page3}
+          options={{ title: 'Create Account' }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );
@@ -54,31 +59,41 @@ const Login = ({ navigation, route }) => {
         onChangeText={(txt) => setPassword(txt)}
         placeholder='Password'
       />
-    <Button
-      title='Login'
-      onPress= {async () => {
+    <TouchableOpacity 
+    style={ styles.button } 
+    title='login' 
+    onPress= {async () => {
           try {
-            console.log(username);
-            const passwordDB = await getDoc(doc(db, username, "password"));
-            console.log(passwordDB.data());
+            const passwordDB = await getDoc(doc(db, "notes", username));
             if(password == passwordDB.data().key) {
               navigation.navigate("Page1", { username: username })
+            } else {
+              throw new Error;
             }
           } catch(err) {
             alert("Username or password was wrong");
           }
         Keyboard.dismiss();
       }
-    }
-    />
+    }>
+        <Text>LOGIN</Text>
+    </TouchableOpacity>
+    <TouchableOpacity 
+    style={ styles.button } 
+    title='createAccount' 
+    onPress={ () => {
+          navigation.navigate("Page3")
+      }}>
+        <Text>CREATE NEW ACCOUNT</Text>
+    </TouchableOpacity>
     </View>
   );
 };
 
 const Page1 = ({ navigation, route }) => {
 
-  const messageBack = route.params?.messageBack;
-  const [values, loading, error] = useCollection(collection(db, "notes"));
+  const username = route.params?.username;
+  const [values, loading, error] = useCollection(collection(db, "notes", username, "notes"));
   const [notes, setNotes] = useState([]); 
   const [newNote, setNewNote] = useState('');
   const data = values?.docs.map((doc => ({...doc.data(), id: doc.id})));
@@ -91,7 +106,7 @@ const Page1 = ({ navigation, route }) => {
   };
 
   async function deleteDocument(id) {
-    await deleteDoc(doc(db, "notes", id));
+    await deleteDoc(doc(db, "notes", username, "notes", id));
   } 
 
   deleteNote = (key) => {
@@ -106,7 +121,7 @@ const Page1 = ({ navigation, route }) => {
     <TouchableOpacity
       style={styles.item}
       onPress={() =>
-        navigation.navigate("Page2", { key: item.key, message: item.title, updateNote: updateNote })
+        navigation.navigate("Page2", { key: item.key, message: item.title, username: username, updateNote: updateNote })
       }>
       <Text style={styles.itemText}>{item.key}</Text>
       <TouchableOpacity style= { styles.deleteButton }
@@ -136,7 +151,7 @@ const Page1 = ({ navigation, route }) => {
   onPress={ () => {
     setNotes( async () => {
         try {
-          await setDoc(doc(db, "notes", newNote), {
+          await setDoc(doc(db, "notes", username, "notes", newNote), {
             "key": newNote,
             "title": ''
           })
@@ -154,6 +169,7 @@ const Page1 = ({ navigation, route }) => {
 const Page2 = ({ navigation, route }) => {
   const message = route.params?.message;
   const key = route.params?.key;
+  const username = route.params?.username;
   const updateNote = route.params?.updateNote;
   const [reply, setReply] = useState('');
   const [imagePath, setImagePath] = useState(null);
@@ -191,30 +207,21 @@ const Page2 = ({ navigation, route }) => {
   }
 
   async function downloadImage() {
-    await getDownloadURL(ref(storage, key + ".jpg"))
+    await getDownloadURL(ref(storage, username + key + ".jpg"))
     .then( (url) => {
       setImagePath(url);
     });
   }
 
   async function updateNoteFire(id, title) {
-    console.log("1");
     if(title != "") {
-      await updateDoc(doc(db, "notes", id), {
+      await updateDoc(doc(db, "notes", username, "notes", id), {
         title: title
       });
     }
-    console.log("2");
-    try {
     const uploadImage = await fetch(imagePath);
-    } catch(err) {
-      alert(err);
-    }
-    console.log("3");
     const blob = await uploadImage.blob();
-    console.log("4");
-    const storageRef = await ref(storage, key + ".jpg");
-    console.log("5");
+    const storageRef = await ref(storage, username + key + ".jpg");
     uploadBytes(storageRef, blob)
     .then( (snapshot) => {
       console.log("Image uploaded!");
@@ -252,6 +259,79 @@ const Page2 = ({ navigation, route }) => {
     </View>
   );
 };
+
+const Page3 = ({ navigation, route }) => {
+  
+  const [newUsername, setNewUsername] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  let usernameUsed = false;
+  let [showErrorBox, setShowErrorBox] = useState(false);
+
+  async function createNewUser(userN, passW) {
+    usernameUsed = false;
+    try { 
+      const values = await collection(db, "notes");
+      const querySnapshot = await getDocs(values);
+      querySnapshot.forEach((doc) => {
+        if (userN == doc.id) {
+          usernameUsed = true;
+          throw new Error("Username already used");
+        }
+      });
+    } catch(err) {
+      console.log(err.message);
+    }
+    if(!usernameUsed) {
+      try {
+          await setDoc(doc(db, "notes", userN), {
+            "key": passW,
+          });
+          await setDoc(doc(db, "notes", userN), { "notes": {} }, { merge: true });
+          navigation.navigate("Page1", { username: userN })
+      } catch(err) {
+          console.log(err);
+      }
+    } else {
+      showErrorBoxFunction();
+    }
+  };
+
+  const showErrorBoxFunction = () => {
+    setShowErrorBox(true);
+  };
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.heading}>New user</Text>
+      <TextInput
+        style={ styles.textInput }
+        onChangeText={(txt) => setNewUsername(txt)}
+        placeholder='Username'
+        value={newUsername}
+      />
+      <TextInput
+        style={ styles.textInput }
+        onChangeText={(txt) => setNewPassword(txt)}
+        placeholder='Password'
+        value={newPassword}
+      />
+      <TouchableOpacity
+        style={ styles.button }
+        title='createAccount'
+        onPress={ () => {
+          createNewUser(newUsername, newPassword);
+        }}
+      >
+        <Text>CREATE ACCOUNT</Text>
+      </TouchableOpacity>
+      {showErrorBox && (
+        <View style={{ padding: 10 }}>
+          <Text style={{ color: 'red' }}>Username already in use</Text>
+        </View>
+      )}
+
+    </View>
+)};
 
 const styles = StyleSheet.create({
   container: {
